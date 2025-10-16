@@ -5,3 +5,9 @@
 [submodule "third_party/ORB_SLAM3"]
     path = core/third_party/ORB_SLAM3
     url = https://github.com/xingrui-pub/ORB_SLAM3-mod.git
+[submodule "core/third_party/pybind11"]
+	path = core/third_party/pybind11
+	url = https://github.com/pybind/pybind11.git
+[submodule "core/third_party/ORB_SLAM3"]
+	path = core/third_party/ORB_SLAM3
+	url = https://github.com/xingrui-pub/ORB_SLAM3-mod.git
