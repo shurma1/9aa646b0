@@ -158,6 +158,7 @@ export const useWebRTC = ({
 			
 			streamRef.current = stream;
 			
+			//@ts-ignore
 			const pc = new RTCPeerConnection({ sdpSemantics: 'unified-plan' });
 			pcRef.current = pc;
 			
