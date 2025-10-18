@@ -1,37 +1,27 @@
 
 import React, { useEffect, useState} from "react";
 import { Typography } from "@/components/ui/typography";
-import { Flex } from "@/components/ui/flex";
-import QrCodeCard from "@/components/qrCodeCard.tsx";
 import FilePickerCard from "@/components/FilePickerCard.tsx";
 
 const HomePage: React.FC = () => {
-	const [link, setLink] = useState<string | null>(null);
-	const [selectedFile, setSelectedFile] = useState<File | null>(null);
-	
-	useEffect(() => {
-		setTimeout(() => {
-			setLink('http://reassel.com/stream/129392301290429391s')
-		}, 2000)
-	}, []);
-	
-
 	return (
-		<div className="p-8 flex flex-col items-center">
-			<Typography.h1 className="mb-8 text-center">ORB-SLAM3 Demo</Typography.h1>
-
-			<Flex gap="6" align="center" justify="center" wrap="nowrap" className="overflow-auto">
-				<FilePickerCard onFileSelected={(file) => setSelectedFile(file)} />
-				<QrCodeCard
-					value={link}
-				/>
-			</Flex>
-
-			{selectedFile && (
-				<div className="mt-4 text-center">
-					<Typography.p>Выбран файл: {selectedFile.name}</Typography.p>
+		<div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 p-8 flex flex-col items-center justify-center">
+			<div className="w-full max-w-6xl mx-auto space-y-8 flex flex-col items-center">
+				{/* Header Section */}
+				<div className="text-center space-y-4 mb-8">
+					<Typography.h1 className="text-5xl font-bold bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+						ORB-SLAM3 Video Tracker
+					</Typography.h1>
+					<Typography.p className="text-xl text-muted-foreground max-w-2xl mx-auto">
+						Загрузите видео для анализа и отслеживания траектории камеры в реальном времени с помощью технологии SLAM
+					</Typography.p>
 				</div>
-			)}
+
+				{/* Upload Section */}
+				<div className="w-[80vw] max-w-6xl">
+					<FilePickerCard />
+				</div>
+			</div>
 		</div>
 	);
 };

@@ -3,10 +3,70 @@ import cv2
 import os
 import tempfile
 import re
+import numpy as np
 from pathlib import Path
 from typing import Optional
 from store import get_store
 from lib.orb_slam.orb_slam import OrbslamMonoRunner
+
+
+def project_3d_to_2d(points_3d, camera_pose, camera_params):
+    """
+    Проецирует 3D точки мировой системы координат в 2D координаты изображения.
+    
+    Args:
+        points_3d: numpy array of 3D points in world coordinates (Nx3)
+        camera_pose: 4x4 camera transformation matrix (world to camera)
+        camera_params: dict with camera intrinsics (fx, fy, cx, cy)
+    
+    Returns:
+        List of 2D points [(x, y), ...] that are within image bounds
+    """
+    if points_3d is None or len(points_3d) == 0:
+        print("[DEBUG] project_3d_to_2d: No 3D points provided")
+        return []
+    
+    try:
+        print(f"[DEBUG] project_3d_to_2d: Processing {len(points_3d)} 3D points")
+        # Извлекаем параметры камеры
+        fx = camera_params['fx']
+        fy = camera_params['fy'] 
+        cx = camera_params['cx']
+        cy = camera_params['cy']
+        width = camera_params['width']
+        height = camera_params['height']
+        
+        # Преобразуем 3D точки в систему координат камеры
+        points_3d_homogeneous = np.column_stack([points_3d, np.ones(len(points_3d))])  # Nx4
+        camera_pose_np = np.array(camera_pose)
+        
+        # Применяем преобразование камеры (world -> camera)
+        points_camera = points_3d_homogeneous @ camera_pose_np.T  # Nx4 @ 4x4 = Nx4
+        points_camera = points_camera[:, :3]  # Берем только x, y, z
+        
+        # Фильтруем точки, которые находятся перед камерой (z > 0)
+        valid_depth = points_camera[:, 2] > 0.01  # Минимальная дистанция 1cm
+        if not np.any(valid_depth):
+            return []
+            
+        points_camera_valid = points_camera[valid_depth]
+        
+        # Проецируем в 2D
+        x_2d = fx * (points_camera_valid[:, 0] / points_camera_valid[:, 2]) + cx
+        y_2d = fy * (points_camera_valid[:, 1] / points_camera_valid[:, 2]) + cy
+        
+        # Фильтруем точки, которые находятся в пределах изображения
+        keypoints_2d = []
+        for i in range(len(x_2d)):
+            x, y = x_2d[i], y_2d[i]
+            if 0 <= x < width and 0 <= y < height:
+                keypoints_2d.append({'x': float(x), 'y': float(y)})
+        
+        return keypoints_2d
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to project 3D points to 2D: {e}")
+        return []
 
 
 def _generate_temp_config(width: int, height: int, fps: float, processing_id: str) -> Optional[str]:
@@ -133,6 +193,8 @@ async def start_processing(processing_id: str, video_path: str) -> Optional[str]
         'trajectory': [],
         'current_pose': None,
         'tracked_points_count': 0,
+        'all_map_points': [],  # Все точки карты (накапливаем)
+        'video_path': video_path,  # Путь к видеофайлу для воспроизведения
         'status': 'initializing'
     })
     
@@ -184,6 +246,72 @@ async def start_processing(processing_id: str, video_path: str) -> Optional[str]
                 update_data['current_pose'] = info['pose'].tolist() if info['pose'] is not None else None
                 update_data['tracked_points_count'] = tracked_points
                 
+                # Текущие отслеживаемые точки (для отображения)
+                current_points_list = []
+                if info['points'] is not None and len(info['points']) > 0:
+                    max_current = min(500, len(info['points']))
+                    for i in range(max_current):
+                        point = info['points'][i]
+                        if len(point) >= 3:
+                            current_points_list.append({
+                                'x': float(point[0]),
+                                'y': float(point[1]),
+                                'z': float(point[2])
+                            })
+                update_data['tracked_points'] = current_points_list
+                
+                # Получаем 2D ключевые точки напрямую из C++
+                keypoints_2d_list = []
+                if 'keypoints_2d' in info and info['keypoints_2d'] is not None and len(info['keypoints_2d']) > 0:
+                    max_keypoints = min(200, len(info['keypoints_2d']))
+                    for i in range(max_keypoints):
+                        kp = info['keypoints_2d'][i]
+                        if len(kp) >= 2:
+                            keypoints_2d_list.append({
+                                'x': float(kp[0]),
+                                'y': float(kp[1])
+                            })
+                    
+                    print(f"[DEBUG] Got {len(keypoints_2d_list)} 2D keypoints from C++")
+                    if keypoints_2d_list:
+                        print(f"[DEBUG] First 2D point: ({keypoints_2d_list[0]['x']:.1f}, {keypoints_2d_list[0]['y']:.1f})")
+                
+                update_data['keypoints_2d'] = keypoints_2d_list
+                
+                # Накапливаем все точки карты (добавляем только новые уникальные точки)
+                if info['points'] is not None and len(info['points']) > 0:
+                    # Получаем существующие точки карты
+                    processing_data = store.get(processing_id).data
+                    all_map_points = processing_data.get('all_map_points', [])
+                    
+                    # Создаём set существующих точек для быстрой проверки
+                    existing_points_set = {(p['x'], p['y'], p['z']) for p in all_map_points}
+                    
+                    # Добавляем новые точки
+                    new_points_added = 0
+                    for point in info['points']:
+                        if len(point) >= 3:
+                            point_tuple = (float(point[0]), float(point[1]), float(point[2]))
+                            # Проверяем уникальность с небольшим допуском (округление до 3 знаков)
+                            rounded_point = (round(point_tuple[0], 3), round(point_tuple[1], 3), round(point_tuple[2], 3))
+                            if rounded_point not in existing_points_set:
+                                all_map_points.append({
+                                    'x': point_tuple[0],
+                                    'y': point_tuple[1],
+                                    'z': point_tuple[2]
+                                })
+                                existing_points_set.add(rounded_point)
+                                new_points_added += 1
+                                
+                                # Ограничиваем общее количество точек для производительности
+                                if len(all_map_points) >= 5000:
+                                    break
+                    
+                    update_data['all_map_points'] = all_map_points
+                    
+                    if new_points_added > 0:
+                        print(f"[Frame {info['frame']:05d}] Added {new_points_added} new map points, total: {len(all_map_points)}")
+                
                 # Проверяем количество точек
                 if tracked_points < 15:
                     lost_tracking_count += 1
@@ -206,6 +334,9 @@ async def start_processing(processing_id: str, video_path: str) -> Optional[str]
                 # Трекинг потерян
                 lost_tracking_count += 1
                 print(f"[Frame {runner.frame_idx:05d}] Tracking LOST")
+                
+                # Не пытаемся сбросить трекинг, так как это вызывает segfault
+                # Просто продолжаем обработку - ORB-SLAM3 может восстановиться самостоятельно
             
             # Проверяем, не потерян ли трекинг надолго
             if lost_tracking_count >= max_lost_frames:
@@ -220,8 +351,12 @@ async def start_processing(processing_id: str, video_path: str) -> Optional[str]
             # Даем возможность другим задачам выполняться
             await asyncio.sleep(0)
         
-        # Завершаем обработку
-        runner.stop()
+        # Безопасно завершаем обработку
+        try:
+            runner.stop()
+        except Exception as e:
+            print(f"[WARNING] Error during shutdown: {e}")
+        
         store.update_data(processing_id, {'status': 'completed'})
         store.set_active(processing_id, False)
         

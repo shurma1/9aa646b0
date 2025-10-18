@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from routes.add_route import router as add_router
 from routes.upload_route import router as upload_router
@@ -13,6 +14,16 @@ HOST = "0.0.0.0"
 PORT = 8000
 
 app = FastAPI()
+
+# Добавляем CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Разрешаем всем источникам
+    allow_credentials=False,  # Отключаем credentials при allow_origins=["*"]
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
+
 app.include_router(add_router, prefix="/api")
 app.include_router(upload_router, prefix="/api")
 app.include_router(processing_router, prefix="/api")

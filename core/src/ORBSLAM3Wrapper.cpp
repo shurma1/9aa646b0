@@ -173,6 +173,41 @@ std::vector<Eigen::Vector3f> ORBSLAM3Python::getTrackedMapPoints() const
     return trackedPoints;
 }
 
+std::vector<Eigen::Vector2f> ORBSLAM3Python::getCurrentKeyPoints() const
+{
+    std::vector<Eigen::Vector2f> keyPoints;
+    if (!system) return keyPoints;
+
+    try {
+        // Проверяем, что система не потеряна
+        if (system->isLost()) return keyPoints;
+        
+        // Получаем ключевые точки текущего кадра (undistorted)
+        std::vector<cv::KeyPoint> trackedKeyPoints = system->GetTrackedKeyPointsUn();
+        
+        keyPoints.reserve(std::min(trackedKeyPoints.size(), size_t(200)));
+        
+        for (size_t i = 0; i < trackedKeyPoints.size() && i < 200; ++i)
+        {
+            const cv::KeyPoint& kp = trackedKeyPoints[i];
+            if (kp.pt.x >= 0 && kp.pt.y >= 0) // Проверяем валидность координат
+            {
+                keyPoints.push_back(Eigen::Vector2f(kp.pt.x, kp.pt.y));
+            }
+        }
+        
+        std::cout << "[DEBUG] getCurrentKeyPoints: Found " << keyPoints.size() << " valid keypoints" << std::endl;
+        
+    } catch (const std::exception& e) {
+        std::cerr << "Error in getCurrentKeyPoints: " << e.what() << std::endl;
+        keyPoints.clear();
+    } catch (...) {
+        keyPoints.clear();
+    }
+    
+    return keyPoints;
+}
+
 int ORBSLAM3Python::getNumMapPoints() const
 {
     if (!system) return 0;
@@ -221,5 +256,6 @@ PYBIND11_MODULE(orbslam3, m)
         .def("get_trajectory", &ORBSLAM3Python::getTrajectory)
         .def("get_map_points", &ORBSLAM3Python::getMapPoints, "Get all 3D map points from the current map")
         .def("get_tracked_map_points", &ORBSLAM3Python::getTrackedMapPoints,"Get 3D map points tracked in the last frame")
+        .def("get_current_keypoints", &ORBSLAM3Python::getCurrentKeyPoints,"Get 2D pixel coordinates of current frame keypoints")
         .def("get_num_map_points", &ORBSLAM3Python::getNumMapPoints,"Get the number of map points in the current map");
 }

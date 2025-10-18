@@ -26,6 +26,7 @@ public:
     std::vector<Eigen::Matrix4f> getTrajectory() const;
     std::vector<Eigen::Vector3f> getMapPoints() const;
     std::vector<Eigen::Vector3f> getTrackedMapPoints() const;
+    std::vector<Eigen::Vector2f> getCurrentKeyPoints() const;
     int getNumMapPoints() const;
 
 private:

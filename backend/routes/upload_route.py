@@ -1,4 +1,4 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Response
 from fastapi.responses import StreamingResponse
 from controllers.upload_controller import upload_controller, upload_controller_with_progress
 from services.processing_service import start_processing
@@ -108,11 +108,32 @@ async def upload_video_with_progress(file: UploadFile = File(...)):
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
     
+    # NOTE:
+    # Browsers may perform a CORS preflight (OPTIONS) request for this endpoint.
+    # Although FastAPI's CORSMiddleware is configured globally, some clients have
+    # reported missing CORS headers for streaming responses. We explicitly add
+    # the standard CORS headers here to be resilient.
+    # If you later restrict origins, replace '*' with the allowed origin(s).
     return StreamingResponse(
         progress_generator(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            # Explicit CORS headers (normally added by middleware).
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "POST, OPTIONS",
+            "Access-Control-Allow-Headers": "*",
         }
     )
+
+
+@router.options("/upload/stream")
+async def options_upload_stream():
+    """Explicit OPTIONS handler to satisfy certain proxies/browsers that don't route through CORSMiddleware correctly for streaming endpoints."""
+    return Response(status_code=200, headers={
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "*",
+        "Access-Control-Max-Age": "600",
+    })

@@ -90,20 +90,41 @@ class OrbslamMonoRunner:
         if ok and self.frame_idx > self.min_init:
             trajectory = self.slam.get_trajectory()
             points = self.slam.get_tracked_map_points()
+            
+            # Получаем 2D ключевые точки напрямую из C++
+            keypoints_2d = None
+            try:
+                keypoints_2d = self.slam.get_current_keypoints()
+            except Exception as e:
+                print(f"[WARNING] Failed to get 2D keypoints: {e}")
+                keypoints_2d = None
+            
             info = {
                 "frame": self.frame_idx - 1,
                 "pose": trajectory[-1] if trajectory else None,
                 "trajectory": trajectory,
                 "points": np.array(points) if points else None,
+                "keypoints_2d": np.array(keypoints_2d) if keypoints_2d else None,
             }
         return True, info
 
     def stop(self) -> None:
         """Shutdown + release (как в рабочем скрипте)."""
-        if self.slam:
-            self.slam.shutdown()
-        if self.cap:
-            self.cap.release()
+        try:
+            if self.slam:
+                self.slam.shutdown()
+        except Exception as e:
+            print(f"[WARNING] Error during SLAM shutdown: {e}")
+        finally:
+            self.slam = None
+            
+        try:
+            if self.cap:
+                self.cap.release()
+        except Exception as e:
+            print(f"[WARNING] Error during video capture release: {e}")
+        finally:
+            self.cap = None
 
 
 

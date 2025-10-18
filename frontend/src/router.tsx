@@ -12,8 +12,9 @@ const Router = () => {
 			<Routes>
 				{
 					routes.map(
-						route =>
+						(route, index) =>
 							<Route
+								key={index}
 								path={route.route}
 								element={route.element}
 							/>
